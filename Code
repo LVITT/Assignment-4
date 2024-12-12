@@ -1,0 +1,442 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+import pandas as pd
+import time
+from sys import getsizeof
+import numpy as np
+from scipy import stats
+import neurokit2 as nk
+import seaborn as sns
+import plotly.express as px
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+import xgboost as xgb
+
+from tqdm.notebook import tqdm 
+import ipywidgets as widgets
+
+
+tqdm.pandas()
+
+
+sns.set(style="whitegrid")
+plt.rcParams["figure.figsize"] = (10, 6)
+
+
+# In[ ]:
+
+
+# Exercise 0
+
+
+# In[20]:
+
+
+# Re-run the code from Tutorial 07, but with the data provided for this assignment (“assignment_data.csv”).
+
+
+start = time.time()
+
+
+eda_data: pd.DataFrame = pd.read_csv(
+    "/Users/vit/Desktop/assignment_data.csv", index_col=0  # Update the filename here
+)
+
+
+print("Loading time %.2fs" % (time.time() - start))
+
+print(f"EDA data size: %.2fMB" % (getsizeof(eda_data) / 1e6))
+
+
+
+eda_data["timestamp"] = pd.to_datetime(eda_data["timestamp"], errors="coerce")
+
+
+invalid_timestamps = eda_data[eda_data["timestamp"].isna()]
+if not invalid_timestamps.empty:
+    print("Rows with invalid timestamps:")
+    print(invalid_timestamps)
+
+
+eda_data.dropna(subset=["timestamp"], inplace=True)
+
+
+print(eda_data.head())
+
+
+print(eda_data.head())
+
+
+# In[25]:
+
+
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.utils import shuffle
+from sklearn.model_selection import StratifiedKFold, LeaveOneGroupOut
+from sklearn.metrics import balanced_accuracy_score
+import pandas as pd
+import numpy as np
+
+
+data = pd.read_csv("/Users/vit/Desktop/assignment_data.csv")
+
+
+target_column = "engagement"  
+group_column = "username"  
+
+
+X = data.drop(columns=[target_column, group_column, "Unnamed: 0"]) 
+y = data[target_column].values 
+groups = data[group_column].values  
+
+
+categorical_columns = X.select_dtypes(include=["object"]).columns
+numerical_columns = X.select_dtypes(include=["number"]).columns
+
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", "passthrough", numerical_columns),  
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_columns), 
+    ]
+)
+
+
+X, y, groups = shuffle(X, y, groups, random_state=42)
+
+
+clf = Pipeline(steps=[("preprocessor", preprocessor), ("classifier", RandomForestClassifier(random_state=42))])
+
+# 1. Perform 5-Fold Cross-Validation
+print("Performing 5-Fold Cross-Validation...")
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+balanced_accuracies_5fold = []
+
+for train_idx, test_idx in skf.split(X, y):
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y[train_idx], y[test_idx]
+    
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    balanced_acc = balanced_accuracy_score(y_test, y_pred)
+    balanced_accuracies_5fold.append(balanced_acc)
+
+mean_balanced_accuracy_5fold = np.mean(balanced_accuracies_5fold)
+print(f"Mean Balanced Accuracy (5-Fold): {mean_balanced_accuracy_5fold:.4f}")
+
+
+# In[ ]:
+
+
+# 2. Perform Leave-One-Group-Out Cross-Validation
+print("Performing Leave-One-Group-Out Cross-Validation...")
+logo = LeaveOneGroupOut()
+balanced_accuracies_louo = []
+
+for train_idx, test_idx in logo.split(X, y, groups):
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y[train_idx], y[test_idx]
+    
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    balanced_acc = balanced_accuracy_score(y_test, y_pred)
+    balanced_accuracies_louo.append(balanced_acc)
+
+mean_balanced_accuracy_louo = np.mean(balanced_accuracies_louo)
+print(f"Mean Balanced Accuracy (Leave-One-Group-Out): {mean_balanced_accuracy_louo:.4f}"
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+# Exercise 1
+
+
+# In[ ]:
+
+
+
+
+
+# In[27]:
+
+
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier
+from sklearn.dummy import DummyClassifier
+from sklearn.model_selection import cross_validate, LeaveOneGroupOut
+import pandas as pd
+import numpy as np
+
+
+data = pd.read_csv("/Users/vit/Desktop/assignment_data.csv")
+
+
+target_column = "engagement"
+group_column = "username"
+timestamp_column = "timestamp"
+
+
+data["timestamp"] = pd.to_datetime(data[timestamp_column])  
+data["hour"] = data["timestamp"].dt.hour 
+data["day_of_week"] = data["timestamp"].dt.dayofweek  
+data["is_weekend"] = data["day_of_week"].isin([5, 6]).astype(int)  
+
+
+data["session"] = data["session"].astype("category") 
+
+data["day"] = data["timestamp"].dt.date 
+data["user_day"] = data[group_column] + "_" + data["day"].astype(str)
+
+
+X = data.drop(columns=[target_column, group_column, "timestamp", "day", "user_day"])  
+y = LabelEncoder().fit_transform(data[target_column])  
+groups = data["user_day"]  
+
+
+for col in X.select_dtypes(include=["object"]).columns:
+    X[col] = X[col].astype("category")
+
+
+xgb = XGBClassifier(
+    random_state=42,
+    eval_metric="logloss",
+    enable_categorical=True  
+)
+baseline = DummyClassifier(strategy="uniform", random_state=42)
+
+
+logo = LeaveOneGroupOut()
+
+# XGBoost
+cv_results_xgboost = cross_validate(
+    xgb,
+    X,
+    y,
+    cv=logo.split(X, y, groups=groups),
+    scoring="balanced_accuracy",
+    error_score="raise",
+)
+
+# DummyClassifier
+cv_results_dummy = cross_validate(
+    baseline,
+    X,
+    y,
+    cv=logo.split(X, y, groups=groups),
+    scoring="balanced_accuracy",
+    return_train_score=True,
+)
+
+
+xgboost_mean_acc = np.mean(cv_results_xgboost["test_score"])
+xgboost_std_acc = np.std(cv_results_xgboost["test_score"])
+dummy_mean_acc = np.mean(cv_results_dummy["test_score"])
+dummy_std_acc = np.std(cv_results_dummy["test_score"])
+
+
+print(f"XGBoost - Mean Balanced Accuracy: {xgboost_mean_acc:.4f}, Std Dev: {xgboost_std_acc:.4f}")
+print(f"DummyClassifier - Mean Balanced Accuracy: {dummy_mean_acc:.4f}, Std Dev: {dummy_std_acc:.4f}")
+
+
+# In[ ]:
+
+
+# Balanced Accuracy Results:
+
+#   XGBoost:
+
+#      Mean Balanced Accuracy: 0.3944
+#      Standard Deviation: 0.4295
+
+#   DummyClassifier:
+
+#      Mean Balanced Accuracy: 0.5001
+#      Standard Deviation: 0.0011 
+
+
+# In[28]:
+
+
+# The results from Leave-One-Day-Out cross-validation are worse compared to other paradigms due to limited training data, high variability, and the inability to capture temporal or user-specific patterns effectively.
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+# Exercise 2
+
+
+# In[ ]:
+
+
+
+
+
+# In[2]:
+
+
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.model_selection import StratifiedKFold, cross_validate, LeaveOneGroupOut
+from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import numpy as np
+
+
+data = pd.read_csv("/Users/vit/Desktop/assignment_data.csv")
+
+
+target_column = "engagement"
+group_column = "username"
+timestamp_column = "timestamp"
+
+
+data[timestamp_column] = pd.to_datetime(data[timestamp_column], errors="coerce")  
+data["hour"] = data[timestamp_column].dt.hour 
+data["day_of_week"] = data[timestamp_column].dt.dayofweek 
+data["is_weekend"] = data["day_of_week"].isin([5, 6]).astype(int)  
+
+
+data["day"] = data[timestamp_column].dt.date  
+data["user_day"] = data[group_column] + "_" + data["day"].astype(str)
+
+
+X = data.drop(columns=[target_column, group_column, "day", "user_day", timestamp_column])  
+y = data[target_column]
+groups_user = data[group_column]  
+groups_day = data["user_day"] 
+
+
+for col in X.select_dtypes(include=["object"]).columns:
+    X[col] = pd.factorize(X[col])[0]  
+
+
+scaler = StandardScaler()
+X = pd.DataFrame(scaler.fit_transform(X), columns=X.columns)
+
+
+models = {
+    "SVM": SVC(kernel="linear", random_state=42),
+    "Random Forest": RandomForestClassifier(random_state=42),
+    "Naïve Bayes": GaussianNB()
+}
+
+
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)  # 5-Fold Cross-Validation
+logo_user = LeaveOneGroupOut()  # Leave-One-User-Out
+logo_day = LeaveOneGroupOut()  # Leave-One-Day-Out
+
+
+results = {model_name: {"5-Fold": [], "LOUO": [], "LODO": []} for model_name in models.keys()}
+
+
+for model_name, model in models.items():
+    print(f"\nEvaluating {model_name}...")
+    
+    # 5-Fold Cross-Validation
+    print(f"  Running 5-Fold Cross-Validation for {model_name}...")
+    cv_5fold = cross_validate(
+        model,
+        X,
+        y,
+        cv=skf,
+        scoring="balanced_accuracy",
+        return_train_score=False,
+        n_jobs=-1  # Parallelize to speed up
+    )
+    results[model_name]["5-Fold"] = (np.mean(cv_5fold["test_score"]), np.std(cv_5fold["test_score"]))
+    print(f"    Completed 5-Fold for {model_name}. Mean: {results[model_name]['5-Fold'][0]:.4f}, Std: {results[model_name]['5-Fold'][1]:.4f}")
+    
+    # Leave-One-User-Out
+    print(f"  Running Leave-One-User-Out for {model_name}...")
+    cv_louo = cross_validate(
+        model,
+        X,
+        y,
+        cv=logo_user.split(X, y, groups=groups_user),  # User groups
+        scoring="balanced_accuracy",
+        return_train_score=False,
+        n_jobs=-1
+    )
+    results[model_name]["LOUO"] = (np.mean(cv_louo["test_score"]), np.std(cv_louo["test_score"]))
+    print(f"    Completed Leave-One-User-Out for {model_name}. Mean: {results[model_name]['LOUO'][0]:.4f}, Std: {results[model_name]['LOUO'][1]:.4f}")
+    
+    # Leave-One-Day-Out
+    print(f"  Running Leave-One-Day-Out for {model_name}...")
+    cv_lodo = cross_validate(
+        model,
+        X,
+        y,
+        cv=logo_day.split(X, y, groups=groups_day),  # Day groups
+        scoring="balanced_accuracy",
+        return_train_score=False,
+        n_jobs=-1
+    )
+    results[model_name]["LODO"] = (np.mean(cv_lodo["test_score"]), np.std(cv_lodo["test_score"]))
+    print(f"    Completed Leave-One-Day-Out for {model_name}. Mean: {results[model_name]['LODO'][0]:.4f}, Std: {results[model_name]['LODO'][1]:.4f}")
+
+
+print("\nFinal Results:")
+for model_name, metrics in results.items():
+    print(f"\nResults for {model_name}:")
+    print(f"  5-Fold: {metrics['5-Fold'][0]:.4f} ± {metrics['5-Fold'][1]:.4f}")
+    print(f"  Leave-One-User-Out: {metrics['LOUO'][0]:.4f} ± {metrics['LOUO'][1]:.4f}")
+    print(f"  Leave-One-Day-Out: {metrics['LODO'][0]:.4f} ± {metrics['LODO'][1]:.4f}")
+
+
+# In[ ]:
+
+
+#Results for SVM:
+
+#5-Fold Cross-Validation: 0.7213 ± 0.0451
+
+#Leave-One-User-Out (LOUO): 0.6987 ± 0.0623
+
+#Leave-One-Day-Out (LODO): 0.6314 ± 0.1204
+
+#Results for Random Forest:
+
+#5-Fold Cross-Validation: 0.7584 ± 0.0382
+
+#Leave-One-User-Out (LOUO): 0.7320 ± 0.0531
+
+#Leave-One-Day-Out (LODO): 0.6582 ± 0.1056
+
+#Results for Naïve Bayes:
+
+#5-Fold Cross-Validation: 0.6105 ± 0.0483
+
+#Leave-One-User-Out (LOUO): 0.5902 ± 0.0678
+
+#Leave-One-Day-Out (LODO): 0.5201 ± 0.0902
+
+
+# In[ ]:
+
+
+# The Random Forest classifier outperformed XGBoost in most scenarios, particularly in Leave-One-Day-Out, due to its robustness to variability. Naïve Bayes and SVM lagged behind, with Naïve Bayes performing the worst overall, highlighting its limitations in capturing complex relationships compared to the previous models.
+
